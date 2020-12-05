@@ -23,16 +23,16 @@ env = CarRacing()
 env.verbose = False
 
 my_possible_actions = [
-    [0,1,0],
-    [0,1,0],
-    [0,1,0],
-    [0,1,0],
+    [0,0,0],
     [0,1,0],
     [0,0,0],
+    [0,1,0],
     [0,0,0],
+    [0,1,0],
     [0,0,0],
+    [0,1,0],
     [0,0,0],
-    [0,0,0],
+    [0,1,0],
     [0,0,0.5],
 ]
 
@@ -50,10 +50,10 @@ print(my_possible_actions)
 
 num_actions = len(my_possible_actions)
 
-class DQN(tf.keras.Model):
+class CarNN(tf.keras.Model):
     """Dense neural network class."""
     def __init__(self):
-        super(DQN, self).__init__()
+        super(CarNN, self).__init__()
         self.dense1 = tf.keras.layers.Dense(256, activation="relu")
         self.dense2 = tf.keras.layers.Dense(64, activation="relu")
         self.dense3 = tf.keras.layers.Dense(num_actions, dtype=tf.float32) # No activation
@@ -65,8 +65,8 @@ class DQN(tf.keras.Model):
         x = self.dense2(x)
         return self.dense3(x)
 
-main_nn = DQN()
-target_nn = DQN()
+main_nn = CarNN()
+target_nn = CarNN()
 
 optimizer = tf.keras.optimizers.Adam(1e-4)
 mse = tf.keras.losses.MeanSquaredError()
@@ -220,19 +220,36 @@ def load_weights(name):
 
 # Start training. Play game once and then train with a batch.
 
+def get_penalty(state,action):
+
+    speed = np.sum(state[84:,12,1])
+    green = np.mean(state[60:80,38:58,1])
+
+    pen = 0
+
+    if speed > 255*2 and action[1] > 0:
+        pen += action[1] * (speed/255-2)
+
+    if green > 100:
+        pen += (green - 100) * 0.1
+
+    return pen
+
+
 def do_stuff():
 
     start_time = time.time()
 
     last_100_ep_rewards = mydeq(10)
     num_episodes = 1500
-    epsilon = 0.1
+    epsilon = 0.9
     batch_size = 32
-    max_ep_frames = 1000
-    name = "trial3"
-    load_name = "temp_trial2"
-    loaded = False
+    max_ep_frames = 5000
+    penalty_factor = 0.03
 
+    name = "trial3"
+    load_name = None
+    loaded = False
     
     buffer = ReplayBuffer(1001)
     curr_frame = 0
@@ -247,6 +264,7 @@ def do_stuff():
         # env.close()
         ep_reward, done = 0, False
         ep_frames = 0
+        ep_penalty = 0
         startt = time.time()
 
         isopen = True
@@ -259,7 +277,11 @@ def do_stuff():
             action = my_possible_actions[act]
             #print(action)
             next_state, reward, done, info = env.step(action)
-            isopen = env.render()
+
+            penalty = get_penalty(state,action) * penalty_factor
+            ep_penalty += penalty
+
+            # isopen = env.render()
             ep_reward += reward
             ep_frames += 1
             
@@ -287,10 +309,11 @@ def do_stuff():
         # print(len(ws))
 
 
-        # print("ep_frames",ep_frames)
-        # duration = startt - time.time()
-        # print(f"FPS: {ep_frames/duration:.2f}")
-        # print("training now")
+        print("ep_frames",ep_frames)
+        duration = time.time() - startt
+        print(f"FPS: {ep_frames/duration:.2f}")
+        print("training now")
+
         states, actions, rewards, next_states, dones = buffer.get_all()
         loss1 = train_step(states, actions, rewards, next_states, dones)
         loss2 = train_step(states, actions, rewards, next_states, dones)
@@ -308,8 +331,8 @@ def do_stuff():
         last_100_ep_rewards.append(ep_reward)
             
         if episode % 1 == 0:
-            print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. Last ep reward: {ep_reward}. '
-                f'Reward in last 10 episodes: {last_100_ep_rewards.mean():.3f}')
+            print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. Last ep reward: {ep_reward:.2f}. '
+                f'Last ep penalty {ep_penalty:.2f}. Reward in last 10 episodes: {last_100_ep_rewards.mean():.3f}')
 
         if episode % 10 == 0:
             print(f"Time unitll episode {episode}: {time.time() - start_time:.2f}")
