@@ -12,7 +12,8 @@ from car_racing import CarRacing
 # memdebug.start(11223)
 
 NN_PATH = "D:/Info 2018/RN/formula1/networks"
-# NN_PATH = "C:/Users/Astrid/PycharmProjects/gym/networks"
+if not os.path.isdir(NN_PATH):
+    NN_PATH = "C:/Users/Astrid/PycharmProjects/gym/networks"
 
 print("Hello tf!")
 
@@ -36,18 +37,18 @@ my_possible_actions = [
 for i in [1,0.5,0,-0.5,-1]:
     my_possible_actions.append([i,0,0])
 
-# my_possible_actions = [
-#     [0,1,0],
-#     [0,1,0],
-#     [0,0,0],
-#     [0,0,0],
-#     [-1,0,0],
-#     [-1,0,0],
-#     [-1,0,0],
-#     [1,0,0],
-#     [1,0,0],
-#     [0,0,0.5],
-# ]
+my_possible_actions = [
+    [0,1,0],
+    [0,1,0],
+    [0,0,0],
+    [0,0,0],
+    [-1,0,0],
+    [-1,0,0],
+    [-1,0,0],
+    [1,0,0],
+    [1,0,0],
+    [0,0,0.5],
+]
 
 
 print(my_possible_actions)
@@ -259,6 +260,9 @@ def get_penalty(state,action):
     if green > 100:
         pen += (green - 100) * 0.3
 
+    if speed < 255 and action[1] == 0:
+        pen += 1
+
     return pen
 
 def apply_action(act,times):
@@ -279,8 +283,8 @@ def do_stuff():
 
     last_100_ep_rewards = mydeq(10)
 
-    name = "trial5"
-    load_name = "temp_trial4"
+    name = "trial3"
+    load_name = "temp_trial3"
     if load_name:
         epsilon = 0.1
         show_image = True
@@ -290,17 +294,17 @@ def do_stuff():
     curr_frame = 0
     for episode in range(num_episodes+1):
 
-        if load_name and episode > 0 and not loaded:
-            main_nn.set_weights(load_weights(load_name))
-            target_nn.set_weights(load_weights(load_name))
-            loaded = True
-
         state = env.reset()
         # env.close()
-        
+
         if episode == 0:
             main_nn(np.asarray([prepare_state(state)]))
             target_nn(np.asarray([prepare_state(state)]))
+
+        if load_name and not loaded:
+            main_nn.set_weights(load_weights(load_name))
+            target_nn.set_weights(load_weights(load_name))
+            loaded = True
 
         ep_reward, done = 0, False
         ep_frames = 0
@@ -312,7 +316,7 @@ def do_stuff():
             #state_in = tf.expand_dims(state, axis=0)
             curr_state = prepare_state(state)
             
-            act = select_epsilon_greedy_action(curr_state, epsilon, verbose=True)
+            act = select_epsilon_greedy_action(curr_state, epsilon, verbose=False)
             action = my_possible_actions[act]
             #print(action)
             next_state, reward, done, info = apply_action(action,times_for_action)
