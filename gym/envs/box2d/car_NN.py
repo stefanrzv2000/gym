@@ -1,21 +1,17 @@
 import tensorflow as tf
-import gym
-import matplotlib.pyplot as plt
-import Box2D
 import numpy as np
 import random
-
-from collections import deque
-import sys
 import os
 import glob
 import time
+
 from car_racing import CarRacing
 
 # import memdebug
 # memdebug.start(11223)
 
-NN_PATH = "D:/Info 2018/RN/formula1/networks"
+# NN_PATH = "D:/Info 2018/RN/formula1/networks"
+NN_PATH = "C:/Users/Astrid/PycharmProjects/gym/networks"
 
 print("Hello tf!")
 
@@ -39,12 +35,19 @@ my_possible_actions = [
 for i in [1,0.5,0,-0.5,-1]:
     my_possible_actions.append([i,0,0])
 
-# my_possible_actions = [
-#     [0,1,0],
-#     [0,0,0],
-#     [-1,0,0],
-#     [1,0,0]
-# ]
+my_possible_actions = [
+    [0,1,0],
+    [0,1,0],
+    [0,0,0],
+    [0,0,0],
+    [-1,0,0],
+    [-1,0,0],
+    [-1,0,0],
+    [1,0,0],
+    [1,0,0],
+    [0,0,0.5],
+]
+
 
 print(my_possible_actions)
 
@@ -146,7 +149,7 @@ class ReplayBuffer(object):
 
 def select_epsilon_greedy_action(state, epsilon):
     """Take random action with probability epsilon, else take best action."""
-    result = tf.random.uniform((1,))
+    result = np.random.random(1)
     if result < epsilon:
         return random.randint(0,len(my_possible_actions)-1) # Random action (left or right).
     else:
@@ -176,7 +179,7 @@ num_episodes = 1000
 epsilon = 1.0
 batch_size = 32
 discount = 0.99
-buffer = ReplayBuffer(1001)
+buffer = ReplayBuffer(10001)
 curr_frame = 0
 
 def prepare_state(st):
@@ -228,13 +231,20 @@ def get_penalty(state,action):
     pen = 0
 
     if speed > 255*2 and action[1] > 0:
-        pen += action[1] * (speed/255-2)
+        pen += action[1] * (speed/255-2) * 0.4
 
     if green > 100:
         pen += (green - 100) * 0.1
 
     return pen
 
+def apply_action(act,times):
+    rew = 0
+    for t in range(times):
+        next_state, reward, done, info = env.step(act)
+        rew += reward
+
+    return next_state,rew,done,info
 
 def do_stuff():
 
@@ -244,8 +254,8 @@ def do_stuff():
     num_episodes = 1500
     epsilon = 0.9
     batch_size = 32
-    max_ep_frames = 5000
-    penalty_factor = 0.03
+    max_ep_frames = 1000
+    penalty_factor = 0.05
 
     name = "trial3"
     load_name = None
@@ -262,6 +272,11 @@ def do_stuff():
 
         state = env.reset()
         # env.close()
+
+        if episode == 0:
+            main_nn(np.asarray([prepare_state(state)]))
+            target_nn(np.asarray([prepare_state(state)]))
+
         ep_reward, done = 0, False
         ep_frames = 0
         ep_penalty = 0
@@ -270,18 +285,19 @@ def do_stuff():
         isopen = True
         while not done and ep_frames < max_ep_frames and isopen:
             #state_in = tf.expand_dims(state, axis=0)
-
             curr_state = prepare_state(state)
-            
+
+
+
             act = select_epsilon_greedy_action(curr_state, epsilon)
             action = my_possible_actions[act]
             #print(action)
-            next_state, reward, done, info = env.step(action)
+            next_state, reward, done, info = apply_action(action,3)
 
             penalty = get_penalty(state,action) * penalty_factor
             ep_penalty += penalty
 
-            # isopen = env.render()
+            isopen = env.render()
             ep_reward += reward
             ep_frames += 1
             
@@ -337,7 +353,7 @@ def do_stuff():
         if episode % 10 == 0:
             print(f"Time unitll episode {episode}: {time.time() - start_time:.2f}")
 
-        if episode % 100 == 0:
+        if episode % 100 == 0 and episode > 0:
             save_main_nn("temp_" + name)
 
     save_main_nn(name)
