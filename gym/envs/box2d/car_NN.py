@@ -11,8 +11,8 @@ from car_racing import CarRacing
 # import memdebug
 # memdebug.start(11223)
 
-# NN_PATH = "D:/Info 2018/RN/formula1/networks"
-NN_PATH = "C:/Users/Astrid/PycharmProjects/gym/networks"
+NN_PATH = "D:/Info 2018/RN/formula1/networks"
+# NN_PATH = "C:/Users/Astrid/PycharmProjects/gym/networks"
 
 print("Hello tf!")
 
@@ -148,7 +148,7 @@ class ReplayBuffer(object):
 
         return np.array(states), np.array(actions), np.array(rewards, dtype=np.float32), np.array(nexts), np.array(dones, dtype=np.float32)
 
-def select_epsilon_greedy_action(state, epsilon):
+def select_epsilon_greedy_action(state, epsilon, verbose=False):
     """Take random action with probability epsilon, else take best action."""
     result = tf.random.uniform((1,))
     if result < epsilon:
@@ -156,7 +156,12 @@ def select_epsilon_greedy_action(state, epsilon):
     else:
         #print(state.shape)
         state = np.asarray([state])
-        return tf.argmax(main_nn(state))[0] # Greedy action for state.
+        scores = main_nn(state)
+        act = tf.argmax(scores[0])
+        if verbose:
+            print("scores",scores)
+            print("action",act,my_possible_actions[act])
+        return act # Greedy action for state.
 
 @tf.function
 def train_step(states, actions, rewards, next_states, dones):
@@ -215,7 +220,8 @@ def save_main_nn(name):
         "discount":discount,
     }
 
-    json.dump(conf,save_folder + "/" + filename)
+    f = open(save_folder + "/" + filename,"wt")
+    json.dump(conf,f)
 
 def load_weights(name):
 
@@ -267,12 +273,17 @@ def do_stuff():
 
     global epsilon, curr_frame, num_episodes, max_ep_frames, penalty_factor, discount
 
+    show_image = False
+
     start_time = time.time()
 
     last_100_ep_rewards = mydeq(10)
 
-    name = "trial3"
-    load_name = None
+    name = "trial5"
+    load_name = "temp_trial4"
+    if load_name:
+        epsilon = 0.1
+        show_image = True
     loaded = False
     
     buffer = ReplayBuffer(1001)
@@ -301,7 +312,7 @@ def do_stuff():
             #state_in = tf.expand_dims(state, axis=0)
             curr_state = prepare_state(state)
             
-            act = select_epsilon_greedy_action(curr_state, epsilon)
+            act = select_epsilon_greedy_action(curr_state, epsilon, verbose=True)
             action = my_possible_actions[act]
             #print(action)
             next_state, reward, done, info = apply_action(action,times_for_action)
@@ -309,7 +320,8 @@ def do_stuff():
             penalty = get_penalty(state,action) * penalty_factor
             ep_penalty += penalty
 
-            # isopen = env.render()
+            if show_image:
+                isopen = env.render()
             ep_reward += reward
             ep_frames += 1
             
