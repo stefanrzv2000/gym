@@ -4,6 +4,7 @@ import random
 import os
 import glob
 import time
+import json
 
 from car_racing import CarRacing
 
@@ -35,18 +36,18 @@ my_possible_actions = [
 for i in [1,0.5,0,-0.5,-1]:
     my_possible_actions.append([i,0,0])
 
-my_possible_actions = [
-    [0,1,0],
-    [0,1,0],
-    [0,0,0],
-    [0,0,0],
-    [-1,0,0],
-    [-1,0,0],
-    [-1,0,0],
-    [1,0,0],
-    [1,0,0],
-    [0,0,0.5],
-]
+# my_possible_actions = [
+#     [0,1,0],
+#     [0,1,0],
+#     [0,0,0],
+#     [0,0,0],
+#     [-1,0,0],
+#     [-1,0,0],
+#     [-1,0,0],
+#     [1,0,0],
+#     [1,0,0],
+#     [0,0,0.5],
+# ]
 
 
 print(my_possible_actions)
@@ -149,7 +150,7 @@ class ReplayBuffer(object):
 
 def select_epsilon_greedy_action(state, epsilon):
     """Take random action with probability epsilon, else take best action."""
-    result = np.random.random(1)
+    result = tf.random.uniform((1,))
     if result < epsilon:
         return random.randint(0,len(my_possible_actions)-1) # Random action (left or right).
     else:
@@ -175,12 +176,16 @@ def train_step(states, actions, rewards, next_states, dones):
     return loss
 
 # Hyperparameters.
-num_episodes = 1000
-epsilon = 1.0
+num_episodes = 1500
+epsilon = 0.9
 batch_size = 32
+max_ep_frames = 1000
+penalty_factor = 0.05
 discount = 0.99
-buffer = ReplayBuffer(10001)
+buff_size = 10000
+buffer = ReplayBuffer(buff_size)
 curr_frame = 0
+times_for_action = 3
 
 def prepare_state(st):
     state = np.asarray(st[:,:,1])/256
@@ -199,6 +204,18 @@ def save_main_nn(name):
     for i,w in enumerate(ws):
         filename = "weights" + str(i)
         np.save(save_folder + "/" + filename,w)
+
+    filename = "actions.txt"
+    np.savetxt(save_folder + "/" + filename,np.asarray(my_possible_actions),fmt='%.2f')
+
+    filename = "config.json"
+
+    conf = {
+        "times_for_action":times_for_action,
+        "discount":discount,
+    }
+
+    json.dump(conf,save_folder + "/" + filename)
 
 def load_weights(name):
 
@@ -231,10 +248,10 @@ def get_penalty(state,action):
     pen = 0
 
     if speed > 255*2 and action[1] > 0:
-        pen += action[1] * (speed/255-2) * 0.4
+        pen += action[1] * (speed/255-2) * 0.2
 
     if green > 100:
-        pen += (green - 100) * 0.1
+        pen += (green - 100) * 0.3
 
     return pen
 
@@ -248,14 +265,11 @@ def apply_action(act,times):
 
 def do_stuff():
 
+    global epsilon, curr_frame, num_episodes, max_ep_frames, penalty_factor, discount
+
     start_time = time.time()
 
     last_100_ep_rewards = mydeq(10)
-    num_episodes = 1500
-    epsilon = 0.9
-    batch_size = 32
-    max_ep_frames = 1000
-    penalty_factor = 0.05
 
     name = "trial3"
     load_name = None
@@ -272,7 +286,7 @@ def do_stuff():
 
         state = env.reset()
         # env.close()
-
+        
         if episode == 0:
             main_nn(np.asarray([prepare_state(state)]))
             target_nn(np.asarray([prepare_state(state)]))
@@ -286,18 +300,16 @@ def do_stuff():
         while not done and ep_frames < max_ep_frames and isopen:
             #state_in = tf.expand_dims(state, axis=0)
             curr_state = prepare_state(state)
-
-
-
+            
             act = select_epsilon_greedy_action(curr_state, epsilon)
             action = my_possible_actions[act]
             #print(action)
-            next_state, reward, done, info = apply_action(action,3)
+            next_state, reward, done, info = apply_action(action,times_for_action)
 
             penalty = get_penalty(state,action) * penalty_factor
             ep_penalty += penalty
 
-            isopen = env.render()
+            # isopen = env.render()
             ep_reward += reward
             ep_frames += 1
             
@@ -306,12 +318,12 @@ def do_stuff():
             next_state_ = prepare_state(next_state)
             
             # Save to experience replay.
-            buffer.add(curr_state, act, reward, next_state_, done)
+            buffer.add(curr_state, act, reward - penalty, next_state_, done)
             #print("buffer",len(buffer))
             state = next_state
             curr_frame += 1
             # Copy main_nn weights to target_nn.
-            if curr_frame % 2000 == 0:
+            if curr_frame % 3000 == 0:
                 print("Copying weights")
                 target_nn.set_weights(main_nn.get_weights())
 
@@ -328,8 +340,7 @@ def do_stuff():
         print("ep_frames",ep_frames)
         duration = time.time() - startt
         print(f"FPS: {ep_frames/duration:.2f}")
-        print("training now")
-
+        
         states, actions, rewards, next_states, dones = buffer.get_all()
         loss1 = train_step(states, actions, rewards, next_states, dones)
         loss2 = train_step(states, actions, rewards, next_states, dones)
@@ -348,10 +359,10 @@ def do_stuff():
             
         if episode % 1 == 0:
             print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. Last ep reward: {ep_reward:.2f}. '
-                f'Last ep penalty {ep_penalty:.2f}. Reward in last 10 episodes: {last_100_ep_rewards.mean():.3f}')
+                f'Last ep penalty {ep_penalty:.2f}. Reward in last 10 episodes: {last_100_ep_rewards.mean():.3f}\n')
 
         if episode % 10 == 0:
-            print(f"Time unitll episode {episode}: {time.time() - start_time:.2f}")
+            print(f"Time unitll episode {episode}: {time.time() - start_time:.2f}\n")
 
         if episode % 100 == 0 and episode > 0:
             save_main_nn("temp_" + name)
