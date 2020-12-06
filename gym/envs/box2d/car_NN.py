@@ -96,6 +96,23 @@ def select_epsilon_greedy_action(state, epsilon, verbose=False):
             print("action",act,my_possible_actions[act])
         return act # Greedy action for state.
 
+@tf.function
+def train_step(states, actions, rewards, next_states, dones):
+    """Perform a training iteration on a batch of data sampled from the experience
+    replay buffer."""
+    # Calculate targets.
+    next_qs = target_nn(next_states)
+    max_next_qs = tf.reduce_max(next_qs, axis=-1)
+    target = rewards + (1. - dones) * discount * max_next_qs
+    with tf.GradientTape() as tape:
+        qs = main_nn(states)
+        action_masks = tf.one_hot(actions, num_actions)
+        masked_qs = tf.reduce_sum(action_masks * qs, axis=-1)
+        loss = mse(target, masked_qs)
+    grads = tape.gradient(loss, main_nn.trainable_variables)
+    optimizer.apply_gradients(zip(grads, main_nn.trainable_variables))
+    return loss
+
 # Start training. Play game once and then train with a batch.
 
 def get_penalty(state,action):
@@ -215,9 +232,9 @@ for episode in range(num_episodes+1):
     print(f"FPS: {ep_frames/duration:.2f}")
     
     states, actions, rewards, next_states, dones = buffer.get_all()
-    loss1 = train_step(states, actions, rewards, next_states, dones, main_nn, target_nn)
-    loss2 = train_step(states, actions, rewards, next_states, dones, main_nn, target_nn)
-    loss3 = train_step(states, actions, rewards, next_states, dones, main_nn, target_nn)
+    loss1 = train_step(states, actions, rewards, next_states, dones)
+    loss2 = train_step(states, actions, rewards, next_states, dones)
+    loss3 = train_step(states, actions, rewards, next_states, dones)
     print(f"loss {loss1 + loss2 + loss3}")
 
     #save_main_nn("trial1")
