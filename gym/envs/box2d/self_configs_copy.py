@@ -1,4 +1,17 @@
-NN_PATH = "D:/Info 2018/RN/formula1/networks"
+NN_PATH = "C:/Users/Astrid/PycharmProjects/gym/networks"
+
+my_possible_actions_astrid = [
+    [0,1,0],
+    [0,1,0],
+    [0,0,0],
+    [0,0,0],
+    [-1,0,0],
+    [-1,0,0],
+    [-1,0,0],
+    [1,0,0],
+    [1,0,0],
+    [0,0,0.5],
+]
 
 my_possible_actions_stef = [
     [0,0,0],
@@ -17,7 +30,7 @@ my_possible_actions_stef = [
 for i in [1,0.5,0,-0.5,-1]:
     my_possible_actions_stef.append([i,0,0])
 
-my_possible_actions = my_possible_actions_stef
+my_possible_actions = my_possible_actions_astrid
 num_actions = len(my_possible_actions)
 
 num_episodes = 1000

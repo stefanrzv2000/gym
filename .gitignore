@@ -40,3 +40,4 @@ vizdoom.ini
 
 networks/
 **self_config.py
+/gym/envs/box2d/self_configs.py

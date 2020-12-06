@@ -1,85 +1,28 @@
 import tensorflow as tf
 import numpy as np
 import random
-import os
-import glob
 import time
-import json
 
 from car_racing import CarRacing
-from self_configs import NN_PATH, my_possible_actions, num_actions, num_episodes, epsilon, batch_size, max_ep_frames, penalty_factor, discount, buff_size, times_for_action
+from self_configs import NN_PATH, my_possible_actions, num_actions, num_episodes, epsilon, batch_size, max_ep_frames, penalty_factor, discount, buff_size, times_for_action, train_steps
 from CarNNutils import CarNN, optimizer, mse, mydeq, ReplayBuffer, train_step, save_nn, load_weights, load_actions, prepare_state
-
-# import memdebug
-# memdebug.start(11223)
 
 print("Hello tf!")
 
 env = CarRacing()
 env.verbose = False
 
-# my_possible_actions_stef = [
-#     [0,0,0],
-#     [0,1,0],
-#     [0,0,0],
-#     [0,1,0],
-#     [0,0,0],
-#     [0,1,0],
-#     [0,0,0],
-#     [0,1,0],
-#     [0,0,0],
-#     [0,1,0],
-#     [0,0,0.5],
-# ]
-
-# for i in [1,0.5,0,-0.5,-1]:
-#     my_possible_actions_stef.append([i,0,0])
-
-# my_possible_actions_astrid = [
-#     [0,1,0],
-#     [0,1,0],
-#     [0,0,0],
-#     [0,0,0],
-#     [-1,0,0],
-#     [-1,0,0],
-#     [-1,0,0],
-#     [1,0,0],
-#     [1,0,0],
-#     [0,0,0.5],
-# ]
-
-# NN_PATH = "D:/Info 2018/RN/formula1/networks"
-# my_possible_actions = my_possible_actions_stef
-# if not os.path.isdir(NN_PATH):
-#     NN_PATH = "C:/Users/Astrid/PycharmProjects/gym/networks"
-#     my_possible_actions = my_possible_actions_astrid
-
 print(my_possible_actions)
 
 num_actions = len(my_possible_actions)
-
-# class CarNN(tf.keras.Model):
-#     """Dense neural network class."""
-#     def __init__(self,outs):
-#         super(CarNN, self).__init__()
-#         self.dense1 = tf.keras.layers.Dense(256, activation="relu")
-#         self.dense2 = tf.keras.layers.Dense(64, activation="relu")
-#         self.dense3 = tf.keras.layers.Dense(outs, dtype=tf.float32) # No activation
-        
-#     def call(self, x):
-#         """Forward pass."""
-#         # x = tf.keras.backend.flatten(x)
-#         x = self.dense1(x)
-#         x = self.dense2(x)
-#         return self.dense3(x)
 
 main_nn = CarNN(num_actions)
 target_nn = CarNN(num_actions)
 buffer = ReplayBuffer(buff_size)
 
-# optimizer = tf.keras.optimizers.Adam(1e-4)
-# mse = tf.keras.losses.MeanSquaredError()
-
+def softmax(vec):
+    ex = np.exp2(vec-np.min(vec))
+    return ex/np.sum(ex)
 
 def select_epsilon_greedy_action(state, epsilon, verbose=False):
     """Take random action with probability epsilon, else take best action."""
@@ -90,7 +33,8 @@ def select_epsilon_greedy_action(state, epsilon, verbose=False):
         #print(state.shape)
         state = np.asarray([state])
         scores = main_nn(state)
-        act = tf.argmax(scores[0])
+        wscores = softmax(scores[0])
+        act = random.choices(range(len(wscores)), weights=wscores)[0]
         if verbose:
             print("scores",scores)
             print("action",act,my_possible_actions[act])
@@ -138,9 +82,18 @@ def apply_action(act,times):
     for t in range(times):
         next_state, reward, done, info = env.step(act)
         rew += reward
+        if done:
+            return next_state, rew, done, info
 
     return next_state,rew,done,info
 
+def track_coverage(frames, score):
+
+    if frames < max_ep_frames:
+        score += 100
+
+    score += times_for_action*frames*0.1
+    return score/10
 
 ## main stuff
 
@@ -152,7 +105,7 @@ last_100_ep_rewards = mydeq(10)
 
 testing = False
 name = "trial5"
-load_name = "temp_trial4"
+load_name = None
 if load_name and testing:
     epsilon = 0.1
     show_image = True
@@ -166,6 +119,7 @@ for episode in range(num_episodes+1):
     # env.close()
 
     if episode == 0:
+
         if load_name:
             my_possible_actions = load_actions(load_name)
             num_actions = len(my_possible_actions)
@@ -181,6 +135,7 @@ for episode in range(num_episodes+1):
             loaded = True
 
     ep_reward, done = 0, False
+    max_ep_reward = 0
     ep_frames = 0
     ep_penalty = 0
     startt = time.time()
@@ -200,7 +155,12 @@ for episode in range(num_episodes+1):
 
         if show_image:
             isopen = env.render()
+            if not isopen:
+                env.reset()
+                env.render()
+
         ep_reward += reward
+        max_ep_reward = ep_reward if ep_reward > max_ep_reward else max_ep_reward
         ep_frames += 1
         
         #print(sys.getsizeof(buffer))
@@ -217,25 +177,15 @@ for episode in range(num_episodes+1):
             print("Copying weights")
             target_nn.set_weights(main_nn.get_weights())
 
-        # Train neural network.
-        # if len(buffer) >= batch_size and curr_frame%100 == 0:
-        #     #print("training now")
-        #     states, actions, rewards, next_states, dones = buffer.sample(batch_size*10)
-        #     loss = train_step(states, actions, rewards, next_states, dones)
-
-    # ws = main_nn.get_weights()
-    # print(len(ws))
-
-
-    print("ep_frames",ep_frames)
     duration = time.time() - startt
-    print(f"FPS: {ep_frames/duration:.2f}")
-    
+
     states, actions, rewards, next_states, dones = buffer.get_all()
-    loss1 = train_step(states, actions, rewards, next_states, dones)
-    loss2 = train_step(states, actions, rewards, next_states, dones)
-    loss3 = train_step(states, actions, rewards, next_states, dones)
-    print(f"loss {loss1 + loss2 + loss3}")
+
+    loss = 0
+    for i in range(train_steps):
+        loss += train_step(states, actions, rewards, next_states, dones)
+
+    # print(f"loss {loss}")
 
     #save_main_nn("trial1")
     #target_nn.set_weights(load_weights("trial1"))
@@ -246,10 +196,15 @@ for episode in range(num_episodes+1):
     # if len(last_100_ep_rewards) == 100:
     #     last_100_ep_rewards = last_100_ep_rewards[1:]
     last_100_ep_rewards.append(ep_reward)
-        
+
     if episode % 1 == 0:
-        print(f'Episode {episode}/{num_episodes}. Epsilon: {epsilon:.3f}. Last ep reward: {ep_reward:.2f}. '
-            f'Last ep penalty {ep_penalty:.2f}. Reward in last 10 episodes: {last_100_ep_rewards.mean():.3f}\n')
+        print(f'Episode {episode}/{num_episodes}.')
+        print("ep_frames",ep_frames)
+        print(f"FPS: {ep_frames/duration:.2f}")
+        print(f'Epsilon: {epsilon:.3f}.\nLast ep reward: {ep_reward:.2f}. '
+            f'Last ep penalty: {ep_penalty:.2f}.')
+        print(f'Max ep reward: {max_ep_reward:.2f} Track coverage: {track_coverage(ep_frames,ep_reward):.2f}%')
+        print(f'Reward in last 10 episodes: {last_100_ep_rewards.mean():.3f}\n')
 
     if episode % 10 == 0:
         print(f"Time unitll episode {episode}: {time.time() - start_time:.2f}\n")
