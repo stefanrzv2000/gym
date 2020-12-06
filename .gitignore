@@ -39,3 +39,4 @@ tutorial/*.html
 vizdoom.ini
 
 networks/
+**self_config.py
